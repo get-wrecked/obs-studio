@@ -1284,12 +1284,12 @@ const char *obs_get_latest_input_type_id(const char *unversioned_id)
 	int version = -1;
 
 	if (!obs)
-		return false;
+		return NULL;
 	if (!unversioned_id)
-		return false;
+		return NULL;
 
-	for (size_t i = 0; i < obs->input_types.num; i++) {
-		struct obs_source_info *info = &obs->input_types.array[i];
+	for (size_t i = 0; i < obs->source_types.num; i++) {
+		struct obs_source_info *info = &obs->source_types.array[i];
 		if (strcmp(info->unversioned_id, unversioned_id) == 0 &&
 		    (int)info->version > version) {
 			latest = info;
@@ -1839,6 +1839,10 @@ static obs_source_t *obs_load_source_type(obs_data_t *source_data)
 
 	source = obs_source_create_set_last_ver(v_id, name, settings, hotkeys,
 						prev_ver);
+	if (source->owns_info_id) {
+		bfree((void *)source->info.unversioned_id);
+		source->info.unversioned_id = bstrdup(id);
+	}
 
 	obs_data_release(hotkeys);
 
