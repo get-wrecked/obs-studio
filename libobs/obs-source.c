@@ -341,6 +341,7 @@ obs_source_create_internal(const char *id, const char *name,
 
 		source->info.id = bstrdup(id);
 		source->owns_info_id = true;
+		source->info.unversioned_id = bstrdup(source->info.id);
 	} else {
 		source->info = *info;
 
@@ -661,8 +662,10 @@ void obs_source_destroy(struct obs_source *source)
 	obs_data_release(source->private_settings);
 	obs_context_data_free(&source->context);
 
-	if (source->owns_info_id)
+	if (source->owns_info_id) {
 		bfree((void *)source->info.id);
+		bfree((void *)source->info.unversioned_id);
+	}
 
 	bfree(source);
 }
@@ -4592,7 +4595,7 @@ static inline void process_audio_source_tick(obs_source_t *source,
 void obs_source_audio_render(obs_source_t *source, uint32_t mixers,
 			     size_t channels, size_t sample_rate, size_t size)
 {
-	if (!source->audio_output_buf[0][0]) {
+	if (!source->audio_output_buf[0][0] || !source->context.data) {
 		source->audio_pending = true;
 		return;
 	}
