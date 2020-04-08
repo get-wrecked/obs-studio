@@ -13,15 +13,23 @@ struct __declspec(uuid("A9B3D012-3DF2-4EE3-B8D1-8695F457D3C1"))
 };
 
 extern "C" EXPORT BOOL winrt_capture_supported()
-{
-	return winrt::Windows::Foundation::Metadata::ApiInformation::IsTypePresent(
-		       L"Windows.Graphics.Capture.GraphicsCaptureSession") &&
-	       winrt::Windows::Graphics::Capture::GraphicsCaptureSession::
-		       IsSupported();
+try {
+	/* no contract for IGraphicsCaptureItemInterop, verify 10.0.18362.0 */
+	return winrt::Windows::Foundation::Metadata::ApiInformation::
+		IsApiContractPresent(L"Windows.Foundation.UniversalApiContract",
+				     8);
+} catch (const winrt::hresult_error &err) {
+	blog(LOG_ERROR, "winrt_capture_supported (0x%08X): %ls", err.to_abi(),
+	     err.message().c_str());
+	return false;
+} catch (...) {
+	blog(LOG_ERROR, "winrt_capture_supported (0x%08X)",
+	     winrt::to_hresult());
+	return false;
 }
 
 extern "C" EXPORT BOOL winrt_capture_cursor_toggle_supported()
-{
+try {
 #ifdef NTDDI_WIN10_VB
 	return winrt::Windows::Foundation::Metadata::ApiInformation::
 		IsPropertyPresent(
@@ -30,6 +38,14 @@ extern "C" EXPORT BOOL winrt_capture_cursor_toggle_supported()
 #else
 	return false;
 #endif
+} catch (const winrt::hresult_error &err) {
+	blog(LOG_ERROR, "winrt_capture_cursor_toggle_supported (0x%08X): %ls",
+	     err.to_abi(), err.message().c_str());
+	return false;
+} catch (...) {
+	blog(LOG_ERROR, "winrt_capture_cursor_toggle_supported (0x%08X)",
+	     winrt::to_hresult());
+	return false;
 }
 
 template<typename T>
@@ -125,7 +141,7 @@ struct winrt_capture {
 		if (!GetCursorInfo(&ci))
 			return;
 
-		if (!ci.flags & CURSOR_SHOWING)
+		if (!(ci.flags & CURSOR_SHOWING))
 			return;
 
 		HICON icon = CopyIcon(ci.hCursor);
@@ -312,21 +328,21 @@ thread_local bool initialized_tls;
 
 extern "C" EXPORT struct winrt_capture *
 winrt_capture_init(BOOL cursor, HWND window, BOOL client_area)
-{
+try {
 	ID3D11Device *const d3d_device = (ID3D11Device *)gs_get_device_obj();
 	ComPtr<IDXGIDevice> dxgi_device;
-	if (FAILED(d3d_device->QueryInterface(&dxgi_device))) {
-		blog(LOG_WARNING, "[winrt_capture_init] Failed to "
-				  "get DXGI device");
+
+	HRESULT hr = d3d_device->QueryInterface(&dxgi_device);
+	if (FAILED(hr)) {
+		blog(LOG_ERROR, "Failed to get DXGI device");
 		return nullptr;
 	}
 
 	winrt::com_ptr<IInspectable> inspectable;
-	HRESULT hr = CreateDirect3D11DeviceFromDXGIDevice(dxgi_device.Get(),
-							  inspectable.put());
+	hr = CreateDirect3D11DeviceFromDXGIDevice(dxgi_device.Get(),
+						  inspectable.put());
 	if (FAILED(hr)) {
-		blog(LOG_WARNING, "[winrt_capture_init] Failed to "
-				  "get WinRT device");
+		blog(LOG_ERROR, "Failed to get WinRT device");
 		return nullptr;
 	}
 
@@ -341,10 +357,13 @@ winrt_capture_init(BOOL cursor, HWND window, BOOL client_area)
 			winrt::guid_of<ABI::Windows::Graphics::Capture::
 					       IGraphicsCaptureItem>(),
 			reinterpret_cast<void **>(winrt::put_abi(item)));
-	} catch (winrt::hresult_invalid_argument &) {
-		/* too spammy */
-		//blog(LOG_WARNING, "[winrt_capture_init] Failed to "
-		//		  "create GraphicsCaptureItem");
+	} catch (winrt::hresult_error &err) {
+		blog(LOG_ERROR, "CreateForWindow (0x%08X): %ls", err.to_abi(),
+		     err.message().c_str());
+		return nullptr;
+	} catch (...) {
+		blog(LOG_ERROR, "CreateForWindow (0x%08X)",
+		     winrt::to_hresult());
 		return nullptr;
 	}
 
@@ -398,6 +417,14 @@ winrt_capture_init(BOOL cursor, HWND window, BOOL client_area)
 	gs_register_loss_callbacks(&callbacks);
 
 	return capture;
+
+} catch (const winrt::hresult_error &err) {
+	blog(LOG_ERROR, "winrt_capture_init (0x%08X): %ls", err.to_abi(),
+	     err.message().c_str());
+	return nullptr;
+} catch (...) {
+	blog(LOG_ERROR, "winrt_capture_init (0x%08X)", winrt::to_hresult());
+	return nullptr;
 }
 
 extern "C" EXPORT void winrt_capture_free(struct winrt_capture *capture)

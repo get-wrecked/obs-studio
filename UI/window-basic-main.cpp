@@ -29,6 +29,7 @@
 #include <QColorDialog>
 #include <QSizePolicy>
 #include <QScrollBar>
+#include <QTextStream>
 
 #include <util/dstr.h>
 #include <util/util.hpp>
@@ -1024,6 +1025,7 @@ retryScene:
 		ui->preview->SetScrollingOffset(scrollOffX, scrollOffY);
 	}
 	ui->preview->SetFixedScaling(fixedScaling);
+	emit ui->preview->DisplayResized();
 
 	/* ---------------------- */
 
@@ -1450,9 +1452,8 @@ void OBSBasic::InitPrimitives()
 	gs_render_start(true);
 	gs_vertex2f(0.0f, 0.0f);
 	gs_vertex2f(0.0f, 1.0f);
-	gs_vertex2f(1.0f, 1.0f);
 	gs_vertex2f(1.0f, 0.0f);
-	gs_vertex2f(0.0f, 0.0f);
+	gs_vertex2f(1.0f, 1.0f);
 	box = gs_render_save();
 
 	gs_render_start(true);
@@ -1895,6 +1896,9 @@ void OBSBasic::ReceivedIntroJson(const QString &text)
 {
 #ifdef BROWSER_AVAILABLE
 #ifdef _WIN32
+	if (closing)
+		return;
+
 	std::string err;
 	Json json = Json::parse(QT_TO_UTF8(text), err);
 	if (!err.empty())
@@ -1969,7 +1973,33 @@ void OBSBasic::ReceivedIntroJson(const QString &text)
 	}
 #endif
 	cef->init_browser();
-	ExecuteFuncSafeBlock([] { cef->wait_for_browser_init(); });
+
+	WhatsNewBrowserInitThread *wnbit =
+		new WhatsNewBrowserInitThread(QT_UTF8(info_url.c_str()));
+	if (wnbit) {
+		connect(wnbit, &WhatsNewBrowserInitThread::Result, this,
+			&OBSBasic::ShowWhatsNew);
+	}
+	if (wnbit) {
+		whatsNewInitThread.reset(wnbit);
+		whatsNewInitThread->start();
+	}
+#else
+	UNUSED_PARAMETER(text);
+#endif
+#else
+	UNUSED_PARAMETER(text);
+#endif
+}
+
+void OBSBasic::ShowWhatsNew(const QString &url)
+{
+#ifdef BROWSER_AVAILABLE
+#ifdef _WIN32
+	if (closing)
+		return;
+
+	std::string info_url = QT_TO_UTF8(url);
 
 	QDialog *dlg = new QDialog(this);
 	dlg->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -2002,10 +2032,10 @@ void OBSBasic::ReceivedIntroJson(const QString &text)
 
 	dlg->show();
 #else
-	UNUSED_PARAMETER(text);
+	UNUSED_PARAMETER(url);
 #endif
 #else
-	UNUSED_PARAMETER(text);
+	UNUSED_PARAMETER(url);
 #endif
 }
 
@@ -2266,6 +2296,9 @@ void OBSBasic::ClearHotkeys()
 
 OBSBasic::~OBSBasic()
 {
+	/* clear out UI event queue */
+	QApplication::sendPostedEvents(App());
+
 	if (updateCheckThread && updateCheckThread->isRunning())
 		updateCheckThread->wait();
 
@@ -3929,8 +3962,12 @@ void OBSBasic::closeEvent(QCloseEvent *event)
 
 	blog(LOG_INFO, SHUTDOWN_SEPARATOR);
 
+	closing = true;
+
 	if (introCheckThread)
 		introCheckThread->wait();
+	if (whatsNewInitThread)
+		whatsNewInitThread->wait();
 	if (updateCheckThread)
 		updateCheckThread->wait();
 	if (logUploadThread)
@@ -4136,11 +4173,11 @@ void OBSBasic::AddProjectorMenuMonitors(QMenu *parent, QObject *target,
 		QRect screenGeometry = screen->geometry();
 		QString name = "";
 #ifdef _WIN32
-		DISPLAY_DEVICEA ddev;
-		ddev.cb = sizeof(ddev);
-		EnumDisplayDevicesA(screen->name().toStdString().c_str(), 0,
-				    &ddev, 1);
-		name = ddev.DeviceString;
+		QTextStream fullname(&name);
+		fullname << GetMonitorName(screen->name());
+		fullname << " (";
+		fullname << (i + 1);
+		fullname << ")";
 #elif defined(__APPLE__)
 		name = screen->name();
 #elif QT_VERSION >= QT_VERSION_CHECK(5, 9, 0)
@@ -7143,8 +7180,10 @@ void OBSBasic::IconActivated(QSystemTrayIcon::ActivationReason reason)
 	AddProjectorMenuMonitors(studioProgramProjector, this,
 				 SLOT(OpenStudioProgramProjector()));
 
-	if (reason == QSystemTrayIcon::Trigger)
+	if (reason == QSystemTrayIcon::Trigger) {
+		EnablePreviewDisplay(previewEnabled && !isVisible());
 		ToggleShowHide();
+	}
 }
 
 void OBSBasic::SysTrayNotify(const QString &text,
@@ -7443,7 +7482,7 @@ void OBSBasic::ColorChange()
 				obs_data_get_string(curPrivData, "color");
 			const char *customColor = *oldColor != 0 ? oldColor
 								 : "#55FF0000";
-#ifdef __APPLE__
+#ifndef _WIN32
 			options |= QColorDialog::DontUseNativeDialog;
 #endif
 

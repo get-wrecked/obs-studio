@@ -61,6 +61,7 @@ struct window_capture {
 	struct dc_capture capture;
 
 	bool wgc_supported;
+	bool previously_failed;
 	void *winrt_module;
 	struct winrt_exports exports;
 	struct winrt_capture *capture_winrt;
@@ -210,24 +211,31 @@ static void *wc_create(obs_data_t *settings, obs_source_t *source)
 	return wc;
 }
 
-static void wc_destroy(void *data)
+static void wc_actual_destroy(void *data)
 {
 	struct window_capture *wc = data;
 
-	if (wc) {
-		obs_enter_graphics();
-		dc_capture_free(&wc->capture);
-		obs_leave_graphics();
-
-		bfree(wc->title);
-		bfree(wc->class);
-		bfree(wc->executable);
-
-		if (wc->winrt_module)
-			os_dlclose(wc->winrt_module);
-
-		bfree(wc);
+	if (wc->capture_winrt) {
+		wc->exports.winrt_capture_free(wc->capture_winrt);
 	}
+
+	obs_enter_graphics();
+	dc_capture_free(&wc->capture);
+	obs_leave_graphics();
+
+	bfree(wc->title);
+	bfree(wc->class);
+	bfree(wc->executable);
+
+	if (wc->winrt_module)
+		os_dlclose(wc->winrt_module);
+
+	bfree(wc);
+}
+
+static void wc_destroy(void *data)
+{
+	obs_queue_task(OBS_TASK_GRAPHICS, wc_actual_destroy, data, false);
 }
 
 static void wc_update(void *data, obs_data_t *settings)
@@ -238,6 +246,8 @@ static void wc_update(void *data, obs_data_t *settings)
 	/* forces a reset */
 	wc->window = NULL;
 	wc->check_window_timer = WC_CHECK_TIMER;
+
+	wc->previously_failed = false;
 }
 
 static uint32_t wc_width(void *data)
@@ -471,8 +481,16 @@ static void wc_tick(void *data, float seconds)
 		dc_capture_capture(&wc->capture, wc->window);
 	} else if (wc->method == METHOD_WGC) {
 		if (wc->window && (wc->capture_winrt == NULL)) {
-			wc->capture_winrt = wc->exports.winrt_capture_init(
-				wc->cursor, wc->window, wc->client_area);
+			if (!wc->previously_failed) {
+				wc->capture_winrt =
+					wc->exports.winrt_capture_init(
+						wc->cursor, wc->window,
+						wc->client_area);
+
+				if (!wc->capture_winrt) {
+					wc->previously_failed = true;
+				}
+			}
 		}
 	}
 
