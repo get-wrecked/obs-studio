@@ -805,7 +805,7 @@ void capture_free(void)
 	active = false;
 }
 
-#define HOOK_NAME L"graphics_hook_dup_mutex"
+#define HOOK_NAME L"graphics_hook_dup_mutex_m"
 
 static inline HANDLE open_mutex_plus_id(const wchar_t *name, DWORD id)
 {
