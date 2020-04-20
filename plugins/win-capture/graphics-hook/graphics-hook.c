@@ -188,7 +188,7 @@ static inline bool init_hook_info(void)
 
 static DWORD WINAPI dummy_window_thread(LPVOID *unused)
 {
-	static const wchar_t dummy_window_class[] = L"temp_d3d_window_4039785";
+	static const wchar_t dummy_window_class[] = L"medal_temp_d3d_window_4039785";
 	WNDCLASSW wc;
 	MSG msg;
 
