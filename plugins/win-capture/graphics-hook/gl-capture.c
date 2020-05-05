@@ -13,7 +13,7 @@
 #include "graphics-hook.h"
 #include "../funchook.h"
 
-#define DUMMY_WINDOW_CLASS_NAME L"graphics_hook_gl_dummy_window"
+#define DUMMY_WINDOW_CLASS_NAME L"medal_hook_gl_dummy_window"
 
 /* clang-format off */
 
