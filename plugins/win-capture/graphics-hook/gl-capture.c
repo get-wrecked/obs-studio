@@ -549,9 +549,9 @@ static int gl_init(HDC hdc)
 	data.hdc = hdc;
 	data.format = DXGI_FORMAT_B8G8R8A8_UNORM;
 	data.using_scale = global_hook_info->use_scale;
-	data.using_shtex = nv_capture_available &&
+	data.using_shtex = true; /*nv_capture_available &&
 			   !global_hook_info->force_shmem &&
-			   !data.shmem_fallback;
+			   !data.shmem_fallback;*/
 
 	if (data.using_scale) {
 		data.cx = global_hook_info->cx;
@@ -746,10 +746,13 @@ static void gl_capture(HDC hdc)
 		gl_free();
 	}
 	if (capture_should_init()) {
+		gl_init(hdc);
+		/*
 		if (gl_init(hdc) == INIT_SHTEX_FAILED) {
 			data.shmem_fallback = true;
 			gl_init(hdc);
 		}
+		*/
 	}
 	if (capture_ready() && hdc == data.hdc) {
 		uint32_t new_cx;
