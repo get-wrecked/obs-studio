@@ -606,7 +606,7 @@ static void gl_copy_backbuffer(GLuint dst)
 		return;
 	}
 
-	glBlitFramebuffer(0, 0, data.base_cx, data.base_cy, 0, 0, data.cx,
+	glBlitFramebuffer(0, data.base_cy, data.base_cx, 0, 0, 0, data.cx,
 			  data.cy, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 	gl_error("gl_copy_backbuffer", "failed to blit");
 }
