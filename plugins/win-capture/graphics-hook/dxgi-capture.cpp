@@ -45,6 +45,7 @@ static bool setup_dxgi(IDXGISwapChain *swap)
 			data.swap = swap;
 			data.capture = d3d11_capture;
 			data.free = d3d11_free;
+			global_hook_info->dxversion = 11;
 			return true;
 		}
 	}
@@ -54,6 +55,7 @@ static bool setup_dxgi(IDXGISwapChain *swap)
 		data.swap = swap;
 		data.capture = d3d10_capture;
 		data.free = d3d10_free;
+		global_hook_info->dxversion = 10;
 		device->Release();
 		return true;
 	}
@@ -63,6 +65,7 @@ static bool setup_dxgi(IDXGISwapChain *swap)
 		data.swap = swap;
 		data.capture = d3d11_capture;
 		data.free = d3d11_free;
+		global_hook_info->dxversion = 11;
 		device->Release();
 		return true;
 	}
@@ -73,6 +76,7 @@ static bool setup_dxgi(IDXGISwapChain *swap)
 		data.swap = swap;
 		data.capture = d3d12_capture;
 		data.free = d3d12_free;
+		global_hook_info->dxversion = 12;
 		device->Release();
 		return true;
 	}
@@ -260,7 +264,7 @@ bool hook_dxgi(void)
 	if (!dxgi_module) {
 		return false;
 	}
-
+	
 	compile = get_compiler();
 	if (!compile) {
 		hlog("hook_dxgi: failed to find d3d compiler library");
