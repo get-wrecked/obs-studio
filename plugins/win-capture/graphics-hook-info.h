@@ -109,6 +109,9 @@ struct hook_info {
 	/* Pass the DX version */
 	uint32_t dxversion;
 
+	/* Pass the adapter LUID */
+	int64_t adapterLuid;
+
 	uint32_t reserved[128];
 };
 
