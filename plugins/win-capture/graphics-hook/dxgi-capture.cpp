@@ -36,14 +36,12 @@ static bool setup_dxgi(IDXGISwapChain *swap)
 	HRESULT hr;
 
 	hlog("setup_dxgi");
-	/*----- New Code here -----*/
-	IDXGIDevice *pDXGIDevice = NULL;
-	device->QueryInterface(__uuidof(IDXGIDevice), (void **)&pDXGIDevice);
-	hlog("query interface complete");
-	if (pDXGIDevice) {
+	hr = swap->GetDevice(__uuidof(IDXGIDevice), (void **)&device);
+	if (SUCCEEDED(hr)) {
+		IDXGIDevice *dxgi = reinterpret_cast<IDXGIDevice *>(device);
 		hlog("adapter start");
 		IDXGIAdapter *pDXGIAdapter = NULL;
-		pDXGIDevice->GetAdapter(&pDXGIAdapter);
+		dxgi->GetAdapter(&pDXGIAdapter);
 		hlog("got adapter");
 		if (pDXGIAdapter) {
 			DXGI_ADAPTER_DESC adapterDesc;
@@ -52,10 +50,9 @@ static bool setup_dxgi(IDXGISwapChain *swap)
 			pDXGIAdapter->Release();
 			hlog("adapter released");
 		}
-		pDXGIDevice->Release();
+		dxgi->Release();
 		hlog("device released");
 	}
-	/*----- New Code here -----*/
 
 	hr = swap->GetDevice(__uuidof(ID3D11Device), (void **)&device);
 	if (SUCCEEDED(hr)) {
