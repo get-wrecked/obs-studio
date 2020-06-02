@@ -35,22 +35,25 @@ static bool setup_dxgi(IDXGISwapChain *swap)
 	IUnknown *device;
 	HRESULT hr;
 
+	hlog("setup_dxgi");
 	/*----- New Code here -----*/
 	IDXGIDevice *pDXGIDevice = NULL;
 	device->QueryInterface(__uuidof(IDXGIDevice), (void **)&pDXGIDevice);
-
+	hlog("query interface complete");
 	if (pDXGIDevice) {
+		hlog("adapter start");
 		IDXGIAdapter *pDXGIAdapter = NULL;
 		pDXGIDevice->GetAdapter(&pDXGIAdapter);
-
+		hlog("got adapter");
 		if (pDXGIAdapter) {
 			DXGI_ADAPTER_DESC adapterDesc;
 			pDXGIAdapter->GetDesc(&adapterDesc);
 			hlog("received adapter description");
 			pDXGIAdapter->Release();
+			hlog("adapter released");
 		}
-
 		pDXGIDevice->Release();
+		hlog("device released");
 	}
 	/*----- New Code here -----*/
 
