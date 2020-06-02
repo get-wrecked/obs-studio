@@ -6,6 +6,7 @@
 #include "d3d1x_shaders.hpp"
 #include "graphics-hook.h"
 #include "../funchook.h"
+#include "windows.devices.display.core.interop.h"
 
 #if COMPILE_D3D12_HOOK
 #include <d3d12.h>
@@ -44,8 +45,8 @@ static bool setup_dxgi(IDXGISwapChain *swap)
 
 		if (pDXGIAdapter) {
 			DXGI_ADAPTER_DESC adapterDesc;
-			pDXGIAdapter->GetDesc(&adapterDesc);
-			global_hook_info->adapterLuid = adapterDesc.AdapterLuid;
+			pDXGIAdapter->GetDesc(&adapterDesc);		
+			global_hook_info->adapterLuid = Int64FromLuid(adapterDesc.AdapterLuid);
 			pDXGIAdapter->Release();
 		}
 		dxgi->Release();
