@@ -45,7 +45,7 @@ static bool setup_dxgi(IDXGISwapChain *swap)
 		if (pDXGIAdapter) {
 			DXGI_ADAPTER_DESC adapterDesc;
 			pDXGIAdapter->GetDesc(&adapterDesc);
-			global_hook_info->adapterLuid = adapterDesc.AdapterLuid.HighPart;
+			global_hook_info->adapterLuid = adapterDesc.AdapterLuid;
 			pDXGIAdapter->Release();
 		}
 		dxgi->Release();
