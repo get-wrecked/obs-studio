@@ -35,6 +35,25 @@ static bool setup_dxgi(IDXGISwapChain *swap)
 	IUnknown *device;
 	HRESULT hr;
 
+	/*----- New Code here -----*/
+	IDXGIDevice *pDXGIDevice = NULL;
+	device->QueryInterface(__uuidof(IDXGIDevice), (void **)&pDXGIDevice);
+
+	if (pDXGIDevice) {
+		IDXGIAdapter *pDXGIAdapter = NULL;
+		pDXGIDevice->GetAdapter(&pDXGIAdapter);
+
+		if (pDXGIAdapter) {
+			DXGI_ADAPTER_DESC adapterDesc;
+			pDXGIAdapter->GetDesc(&adapterDesc);
+			hlog("received adapter description");
+			pDXGIAdapter->Release();
+		}
+
+		pDXGIDevice->Release();
+	}
+	/*----- New Code here -----*/
+
 	hr = swap->GetDevice(__uuidof(ID3D11Device), (void **)&device);
 	if (SUCCEEDED(hr)) {
 		ID3D11Device *d3d11 = reinterpret_cast<ID3D11Device *>(device);
@@ -264,7 +283,7 @@ bool hook_dxgi(void)
 	if (!dxgi_module) {
 		return false;
 	}
-	
+
 	compile = get_compiler();
 	if (!compile) {
 		hlog("hook_dxgi: failed to find d3d compiler library");
