@@ -329,10 +329,18 @@ static inline bool gl_shtex_init_d3d11(void)
 		return false;
 	}
 
+	DXGI_ADAPTER_DESC adapterDesc;
+	hr = IDXGIAdapter1_GetDesc(adapter, &adapterDesc);
+
+	if (SUCCEEDED(hr)) {
+		global_hook_info->adapterLuid = adapterDesc.AdapterLuid;
+	}
+
 	hr = create(adapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, 0, feature_levels,
 		    sizeof(feature_levels) / sizeof(D3D_FEATURE_LEVEL),
 		    D3D11_SDK_VERSION, &desc, &data.dxgi_swap,
 		    &data.d3d11_device, &level_used, &data.d3d11_context);
+
 	IDXGIAdapter_Release(adapter);
 
 	if (FAILED(hr)) {
