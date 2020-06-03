@@ -386,7 +386,6 @@ static inline bool gl_shtex_init_d3d11_tex(void)
 	hr = IDXGIResource_GetSharedHandle(dxgi_res, &data.handle);
 	IDXGIResource_Release(dxgi_res);
 
-	//Get adapter id
 
 	if (FAILED(hr)) {
 		hlog_hr("gl_shtex_init_d3d11_tex: failed to get shared handle",
