@@ -166,6 +166,10 @@ static inline bool shex_init_d3d11()
 		return false;
 	}
 
+	DXGI_ADAPTER_DESC adapterDesc;
+	adapter->GetDesc(&adapterDesc);
+	global_hook_info->adapterLuid = adapterDesc.AdapterLuid;
+
 	hr = create_device(adapter, D3D_DRIVER_TYPE_UNKNOWN, nullptr, 0,
 			   feature_levels,
 			   sizeof(feature_levels) / sizeof(D3D_FEATURE_LEVEL),
