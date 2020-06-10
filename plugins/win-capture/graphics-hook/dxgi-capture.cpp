@@ -281,7 +281,7 @@ bool hook_dxgi(void)
 	if (!dxgi_module) {
 		return false;
 	}
-
+	
 	compile = get_compiler();
 	if (!compile) {
 		hlog("hook_dxgi: failed to find d3d compiler library");

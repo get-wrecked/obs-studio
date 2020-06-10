@@ -385,6 +385,7 @@ OBSBasic::OBSBasic(QWidget *parent)
 	statsDock->move(newPos);
 
 	ui->previewLabel->setProperty("themeID", "previewProgramLabels");
+	ui->previewLabel->style()->polish(ui->previewLabel);
 
 	bool labels = config_get_bool(GetGlobalConfig(), "BasicWindow",
 				      "StudioModeLabels");
@@ -670,6 +671,8 @@ void OBSBasic::DeferSaveEnd()
 	}
 }
 
+static void LogFilter(obs_source_t *, obs_source_t *filter, void *v_val);
+
 static void LoadAudioDevice(const char *name, int channel, obs_data_t *parent)
 {
 	obs_data_t *data = obs_data_get_obj(parent, name);
@@ -679,6 +682,10 @@ static void LoadAudioDevice(const char *name, int channel, obs_data_t *parent)
 	obs_source_t *source = obs_load_source(data);
 	if (source) {
 		obs_set_output_source(channel, source);
+
+		const char *name = obs_source_get_name(source);
+		blog(LOG_INFO, "[Loaded global audio device]: '%s'", name);
+		obs_source_enum_filters(source, LogFilter, (void *)(intptr_t)1);
 		obs_source_release(source);
 	}
 
@@ -1771,6 +1778,11 @@ void OBSBasic::OBSInit()
 
 #ifndef __APPLE__
 	SystemTray(true);
+#endif
+
+#ifdef _WIN32
+	taskBtn->setWindow(windowHandle());
+	taskProg->setRange(0, 1);
 #endif
 
 	bool has_last_version = config_has_user_value(App()->GlobalConfig(),
@@ -3694,14 +3706,14 @@ int OBSBasic::ResetVideo()
 	ovi.gpu_conversion = true;
 	ovi.scale_type = GetScaleType(basicConfig);
 
-	if (ovi.base_width == 0 || ovi.base_height == 0) {
+	if (ovi.base_width < 8 || ovi.base_height < 8) {
 		ovi.base_width = 1920;
 		ovi.base_height = 1080;
 		config_set_uint(basicConfig, "Video", "BaseCX", 1920);
 		config_set_uint(basicConfig, "Video", "BaseCY", 1080);
 	}
 
-	if (ovi.output_width == 0 || ovi.output_height == 0) {
+	if (ovi.output_width < 8 || ovi.output_height < 8) {
 		ovi.output_width = ovi.base_width;
 		ovi.output_height = ovi.base_height;
 		config_set_uint(basicConfig, "Video", "OutputCX",
@@ -3915,6 +3927,7 @@ void OBSBasic::ClearSceneData()
 		return true;
 	};
 
+	obs_enum_scenes(cb, nullptr);
 	obs_enum_sources(cb, nullptr);
 
 	if (api)
@@ -4714,7 +4727,7 @@ void OBSBasic::CreateSourcePopupMenu(int idx, bool preview)
 
 		resizeOutput->setEnabled(!obs_video_active());
 
-		if (width == 0 || height == 0)
+		if (width < 8 || height < 8)
 			resizeOutput->setEnabled(false);
 
 		scaleFilteringMenu = new QMenu(QTStr("ScaleFiltering"));
@@ -5284,6 +5297,13 @@ inline void OBSBasic::OnActivate()
 		App()->IncrementSleepInhibition();
 		UpdateProcessPriority();
 
+#ifdef _WIN32
+		taskProg->show();
+		taskProg->resume();
+		taskProg->setValue(1);
+		taskBtn->setOverlayIcon(QIcon::fromTheme(
+			"obs-active", QIcon(":/res/images/active.png")));
+#endif
 		if (trayIcon)
 			trayIcon->setIcon(QIcon::fromTheme(
 				"obs-tray-active",
@@ -5305,12 +5325,34 @@ inline void OBSBasic::OnDeactivate()
 		if (trayIcon)
 			trayIcon->setIcon(QIcon::fromTheme(
 				"obs-tray", QIcon(":/res/images/obs.png")));
-	} else if (trayIcon) {
-		if (os_atomic_load_bool(&recording_paused))
-			trayIcon->setIcon(QIcon(":/res/images/obs_paused.png"));
-		else
-			trayIcon->setIcon(
-				QIcon(":/res/images/tray_active.png"));
+#ifdef _WIN32
+		taskProg->hide();
+		taskBtn->clearOverlayIcon();
+#endif
+	} else {
+		if (os_atomic_load_bool(&recording_paused)) {
+#ifdef _WIN32
+			taskProg->show();
+			taskProg->pause();
+			taskBtn->setOverlayIcon(QIcon::fromTheme(
+				"obs-paused",
+				QIcon(":/res/images/paused.png")));
+#endif
+			if (trayIcon)
+				trayIcon->setIcon(
+					QIcon(":/res/images/obs_paused.png"));
+		} else {
+#ifdef _WIN32
+			taskProg->show();
+			taskProg->resume();
+			taskBtn->setOverlayIcon(QIcon::fromTheme(
+				"obs-active",
+				QIcon(":/res/images/active.png")));
+#endif
+			if (trayIcon)
+				trayIcon->setIcon(
+					QIcon(":/res/images/tray_active.png"));
+		}
 	}
 }
 
@@ -5719,9 +5761,6 @@ void OBSBasic::RecordingStop(int code, QString last_error)
 	UpdatePause(false);
 }
 
-#define RP_NO_HOTKEY_TITLE QTStr("Output.ReplayBuffer.NoHotkey.Title")
-#define RP_NO_HOTKEY_TEXT QTStr("Output.ReplayBuffer.NoHotkey.Msg")
-
 void OBSBasic::ShowReplayBufferPauseWarning()
 {
 	auto msgBox = []() {
@@ -5769,21 +5808,6 @@ void OBSBasic::StartReplayBuffer()
 
 	if (LowDiskSpace()) {
 		DiskSpaceMessage();
-		replayBufferButton->setChecked(false);
-		return;
-	}
-
-	obs_output_t *output = outputHandler->replayBuffer;
-	obs_data_t *hotkeys = obs_hotkeys_save_output(output);
-	obs_data_array_t *bindings =
-		obs_data_get_array(hotkeys, "ReplayBuffer.Save");
-	size_t count = obs_data_array_count(bindings);
-	obs_data_array_release(bindings);
-	obs_data_release(hotkeys);
-
-	if (!count) {
-		OBSMessageBox::information(this, RP_NO_HOTKEY_TITLE,
-					   RP_NO_HOTKEY_TEXT);
 		replayBufferButton->setChecked(false);
 		return;
 	}
@@ -6224,6 +6248,9 @@ void OBSBasic::on_actionEditTransform_triggered()
 {
 	if (transformWindow)
 		transformWindow->close();
+
+	if (!GetCurrentSceneItem())
+		return;
 
 	transformWindow = new OBSBasicTransform(this);
 	transformWindow->show();
@@ -7264,7 +7291,7 @@ void OBSBasic::on_actionCopySource_triggered()
 		copyVisible = obs_sceneitem_visible(item);
 
 		uint32_t output_flags = obs_source_get_output_flags(source);
-		if (!(output_flags & OBS_SOURCE_DO_NOT_DUPLICATE) == 0)
+		if (output_flags & OBS_SOURCE_DO_NOT_DUPLICATE)
 			allowPastingDuplicate = false;
 	}
 
@@ -7703,6 +7730,13 @@ void OBSBasic::PauseRecording()
 		pause->setChecked(true);
 		pause->blockSignals(false);
 
+		ui->statusbar->RecordingPaused();
+
+#ifdef _WIN32
+		taskProg->pause();
+		taskBtn->setOverlayIcon(QIcon::fromTheme(
+			"obs-paused", QIcon(":/res/images/paused.png")));
+#endif
 		if (trayIcon)
 			trayIcon->setIcon(QIcon(":/res/images/obs_paused.png"));
 
@@ -7730,6 +7764,13 @@ void OBSBasic::UnpauseRecording()
 		pause->setChecked(false);
 		pause->blockSignals(false);
 
+		ui->statusbar->RecordingUnpaused();
+
+#ifdef _WIN32
+		taskProg->resume();
+		taskBtn->setOverlayIcon(QIcon::fromTheme(
+			"obs-active", QIcon(":/res/images/active.png")));
+#endif
 		if (trayIcon)
 			trayIcon->setIcon(
 				QIcon(":/res/images/tray_active.png"));
