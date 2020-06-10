@@ -13,7 +13,7 @@
 #include "graphics-hook.h"
 #include "../funchook.h"
 
-#define DUMMY_WINDOW_CLASS_NAME L"graphics_hook_gl_dummy_window"
+#define DUMMY_WINDOW_CLASS_NAME L"medal_hook_gl_dummy_window"
 
 /* clang-format off */
 
@@ -329,10 +329,18 @@ static inline bool gl_shtex_init_d3d11(void)
 		return false;
 	}
 
+	DXGI_ADAPTER_DESC adapterDesc;
+	hr = IDXGIAdapter1_GetDesc(adapter, &adapterDesc);
+
+	if (SUCCEEDED(hr)) {
+		global_hook_info->adapterLuid = adapterDesc.AdapterLuid;
+	}
+
 	hr = create(adapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, 0, feature_levels,
 		    sizeof(feature_levels) / sizeof(D3D_FEATURE_LEVEL),
 		    D3D11_SDK_VERSION, &desc, &data.dxgi_swap,
 		    &data.d3d11_device, &level_used, &data.d3d11_context);
+
 	IDXGIAdapter_Release(adapter);
 
 	if (FAILED(hr)) {
@@ -377,6 +385,7 @@ static inline bool gl_shtex_init_d3d11_tex(void)
 
 	hr = IDXGIResource_GetSharedHandle(dxgi_res, &data.handle);
 	IDXGIResource_Release(dxgi_res);
+
 
 	if (FAILED(hr)) {
 		hlog_hr("gl_shtex_init_d3d11_tex: failed to get shared handle",
@@ -549,9 +558,9 @@ static int gl_init(HDC hdc)
 	data.hdc = hdc;
 	data.format = DXGI_FORMAT_B8G8R8A8_UNORM;
 	data.using_scale = global_hook_info->use_scale;
-	data.using_shtex = nv_capture_available &&
+	data.using_shtex = true; /*nv_capture_available &&
 			   !global_hook_info->force_shmem &&
-			   !data.shmem_fallback;
+			   !data.shmem_fallback;*/
 
 	if (data.using_scale) {
 		data.cx = global_hook_info->cx;
@@ -606,7 +615,7 @@ static void gl_copy_backbuffer(GLuint dst)
 		return;
 	}
 
-	glBlitFramebuffer(0, 0, data.base_cx, data.base_cy, 0, 0, data.cx,
+	glBlitFramebuffer(0, data.base_cy, data.base_cx, 0, 0, 0, data.cx,
 			  data.cy, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 	gl_error("gl_copy_backbuffer", "failed to blit");
 }
@@ -746,10 +755,13 @@ static void gl_capture(HDC hdc)
 		gl_free();
 	}
 	if (capture_should_init()) {
+		gl_init(hdc);
+		/*
 		if (gl_init(hdc) == INIT_SHTEX_FAILED) {
 			data.shmem_fallback = true;
 			gl_init(hdc);
 		}
+		*/
 	}
 	if (capture_ready() && hdc == data.hdc) {
 		uint32_t new_cx;

@@ -188,7 +188,7 @@ static inline bool init_hook_info(void)
 
 static DWORD WINAPI dummy_window_thread(LPVOID *unused)
 {
-	static const wchar_t dummy_window_class[] = L"temp_d3d_window_4039785";
+	static const wchar_t dummy_window_class[] = L"medal_temp_d3d_window_4039785";
 	WNDCLASSW wc;
 	MSG msg;
 
@@ -805,7 +805,7 @@ void capture_free(void)
 	active = false;
 }
 
-#define HOOK_NAME L"graphics_hook_dup_mutex"
+#define HOOK_NAME L"graphics_hook_dup_mutex_m"
 
 static inline HANDLE open_mutex_plus_id(const wchar_t *name, DWORD id)
 {

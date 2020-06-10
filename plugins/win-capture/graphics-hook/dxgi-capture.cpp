@@ -35,6 +35,23 @@ static bool setup_dxgi(IDXGISwapChain *swap)
 	IUnknown *device;
 	HRESULT hr;
 
+	hr = swap->GetDevice(__uuidof(IDXGIDevice), (void **)&device);
+	if (SUCCEEDED(hr)) {
+		IDXGIDevice *dxgi = reinterpret_cast<IDXGIDevice *>(device);
+
+		IDXGIAdapter *pDXGIAdapter = NULL;
+		dxgi->GetAdapter(&pDXGIAdapter);
+
+		if (pDXGIAdapter) {
+			DXGI_ADAPTER_DESC adapterDesc;
+			pDXGIAdapter->GetDesc(&adapterDesc);
+
+			global_hook_info->adapterLuid = adapterDesc.AdapterLuid;
+			pDXGIAdapter->Release();
+		}
+		dxgi->Release();
+	}
+
 	hr = swap->GetDevice(__uuidof(ID3D11Device), (void **)&device);
 	if (SUCCEEDED(hr)) {
 		ID3D11Device *d3d11 = reinterpret_cast<ID3D11Device *>(device);
