@@ -450,8 +450,8 @@ static inline bool vk_shtex_init_d3d11(struct vk_data *data)
 		D3D_FEATURE_LEVEL_9_3,
 	};
 
-	DXGI_ADAPTER_DESC adapterDesc;
-	adapter->GetDesc(&adapterDesc);
+	DXGI_ADAPTER_DESC1 adapterDesc;
+	adapter->GetDesc1(&adapterDesc);
 	global_hook_info->adapterLuid = adapterDesc.AdapterLuid;
 
 	hr = create((IDXGIAdapter *)adapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, 0,
