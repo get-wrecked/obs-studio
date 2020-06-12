@@ -450,6 +450,10 @@ static inline bool vk_shtex_init_d3d11(struct vk_data *data)
 		D3D_FEATURE_LEVEL_9_3,
 	};
 
+	DXGI_ADAPTER_DESC adapterDesc;
+	adapter->GetDesc(&adapterDesc);
+	global_hook_info->adapterLuid = adapterDesc.AdapterLuid;
+
 	hr = create((IDXGIAdapter *)adapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, 0,
 		    feature_levels,
 		    sizeof(feature_levels) / sizeof(D3D_FEATURE_LEVEL),
@@ -1587,7 +1591,7 @@ bool hook_vulkan(void)
 {
 	static bool hooked = false;
 	if (!hooked && vulkan_seen) {
-		hlog("Hooked Vulkan");
+		hlog("Hooked Vulkan.");
 		hooked = true;
 	}
 	return hooked;
