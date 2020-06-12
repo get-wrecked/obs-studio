@@ -444,7 +444,7 @@ static inline bool vk_shtex_init_d3d11(struct vk_data *data)
 	}
 
 	DXGI_ADAPTER_DESC1 adapterDesc;
-	IDXGIAdapter1_GetDesc(adapter, &adapterDesc);
+	IDXGIAdapter1_GetDesc1(adapter, &adapterDesc);
 	global_hook_info->adapterLuid = adapterDesc.AdapterLuid;
 
 	static const D3D_FEATURE_LEVEL feature_levels[] = {
