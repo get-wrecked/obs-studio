@@ -443,16 +443,16 @@ static inline bool vk_shtex_init_d3d11(struct vk_data *data)
 		return false;
 	}
 
+	DXGI_ADAPTER_DESC1 adapterDesc;
+	IDXGIAdapter1_GetDesc(adapter, &adapterDesc);
+	global_hook_info->adapterLuid = adapterDesc.AdapterLuid;
+
 	static const D3D_FEATURE_LEVEL feature_levels[] = {
 		D3D_FEATURE_LEVEL_11_0,
 		D3D_FEATURE_LEVEL_10_1,
 		D3D_FEATURE_LEVEL_10_0,
 		D3D_FEATURE_LEVEL_9_3,
 	};
-
-	DXGI_ADAPTER_DESC1 adapterDesc;
-	adapter->GetDesc1(&adapterDesc);
-	global_hook_info->adapterLuid = adapterDesc.AdapterLuid;
 
 	hr = create((IDXGIAdapter *)adapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, 0,
 		    feature_levels,
