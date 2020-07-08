@@ -590,6 +590,7 @@ obs_data_array_t *OBSBasic::SaveProjectors()
 
 		obs_data_t *data = obs_data_create();
 		ProjectorType type = projector->GetProjectorType();
+
 		switch (type) {
 		case ProjectorType::Scene:
 		case ProjectorType::Source: {
@@ -601,11 +602,20 @@ obs_data_array_t *OBSBasic::SaveProjectors()
 		default:
 			break;
 		}
+
 		obs_data_set_int(data, "monitor", projector->GetMonitor());
 		obs_data_set_int(data, "type", static_cast<int>(type));
 		obs_data_set_string(
 			data, "geometry",
 			projector->saveGeometry().toBase64().constData());
+
+		if (projector->IsAlwaysOnTopOverridden())
+			obs_data_set_bool(data, "alwaysOnTop",
+					  projector->IsAlwaysOnTop());
+
+		obs_data_set_bool(data, "alwaysOnTopOverridden",
+				  projector->IsAlwaysOnTopOverridden());
+
 		obs_data_array_push_back(savedProjectors, data);
 		obs_data_release(data);
 	};
@@ -686,6 +696,16 @@ static void LoadAudioDevice(const char *name, int channel, obs_data_t *parent)
 		const char *name = obs_source_get_name(source);
 		blog(LOG_INFO, "[Loaded global audio device]: '%s'", name);
 		obs_source_enum_filters(source, LogFilter, (void *)(intptr_t)1);
+		obs_monitoring_type monitoring_type =
+			obs_source_get_monitoring_type(source);
+		if (monitoring_type != OBS_MONITORING_TYPE_NONE) {
+			const char *type = (monitoring_type ==
+					    OBS_MONITORING_TYPE_MONITOR_ONLY)
+						   ? "monitor only"
+						   : "monitor and output";
+
+			blog(LOG_INFO, "    - monitoring: %s", type);
+		}
 		obs_source_release(source);
 	}
 
@@ -792,6 +812,10 @@ void OBSBasic::LoadSavedProjectors(obs_data_array_t *array)
 		info->geometry =
 			std::string(obs_data_get_string(data, "geometry"));
 		info->name = std::string(obs_data_get_string(data, "name"));
+		info->alwaysOnTop = obs_data_get_bool(data, "alwaysOnTop");
+		info->alwaysOnTopOverridden =
+			obs_data_get_bool(data, "alwaysOnTopOverridden");
+
 		savedProjectorsArray.emplace_back(info);
 
 		obs_data_release(data);
@@ -1066,6 +1090,12 @@ retryScene:
 		opt_start_replaybuffer = false;
 	}
 
+	if (opt_start_virtualcam) {
+		QMetaObject::invokeMethod(this, "StartVirtualCam",
+					  Qt::QueuedConnection);
+		opt_start_virtualcam = false;
+	}
+
 	copyStrings.clear();
 	copyFiltersString = nullptr;
 
@@ -1117,6 +1147,9 @@ bool OBSBasic::LoadService()
 
 	obs_data_t *data =
 		obs_data_create_from_json_file_safe(serviceJsonPath, "bak");
+
+	if (!data)
+		return false;
 
 	obs_data_set_default_string(data, "type", "rtmp_common");
 	type = obs_data_get_string(data, "type");
@@ -1501,6 +1534,18 @@ void OBSBasic::ReplayBufferClicked()
 		StartReplayBuffer();
 };
 
+void OBSBasic::AddVCamButton()
+{
+	vcamButton = new ReplayBufferButton(QTStr("Basic.Main.StartVirtualCam"),
+					    this);
+	vcamButton->setCheckable(true);
+	connect(vcamButton.data(), &QPushButton::clicked, this,
+		&OBSBasic::VCamButtonClicked);
+
+	vcamButton->setProperty("themeID", "vcamButton");
+	ui->buttonsVLayout->insertWidget(2, vcamButton);
+}
+
 void OBSBasic::ResetOutputs()
 {
 	ProfileScope("OBSBasic::ResetOutputs");
@@ -1523,6 +1568,9 @@ void OBSBasic::ResetOutputs()
 			connect(replayBufferButton.data(),
 				&QPushButton::clicked, this,
 				&OBSBasic::ReplayBufferClicked);
+
+			replayBufferButton->setSizePolicy(QSizePolicy::Ignored,
+							  QSizePolicy::Fixed);
 
 			replayLayout = new QHBoxLayout(this);
 			replayLayout->addWidget(replayBufferButton);
@@ -1624,6 +1672,13 @@ void OBSBasic::OBSInit()
 #ifdef BROWSER_AVAILABLE
 	cef = obs_browser_init_panel();
 #endif
+
+	obs_data_t *obsData = obs_get_private_data();
+	vcamEnabled = obs_data_get_bool(obsData, "vcamEnabled");
+	if (vcamEnabled) {
+		AddVCamButton();
+	}
+	obs_data_release(obsData);
 
 	InitBasicConfigDefaults2();
 
@@ -1796,23 +1851,9 @@ void OBSBasic::OBSInit()
 		config_save_safe(App()->GlobalConfig(), "tmp", nullptr);
 	}
 
-	if (!first_run && !has_last_version && !Active()) {
-		QString msg;
-		msg = QTStr("Basic.FirstStartup.RunWizard");
-
-		QMessageBox::StandardButton button = OBSMessageBox::question(
-			this, QTStr("Basic.AutoConfig"), msg);
-
-		if (button == QMessageBox::Yes) {
-			QMetaObject::invokeMethod(this,
-						  "on_autoConfigure_triggered",
-						  Qt::QueuedConnection);
-		} else {
-			msg = QTStr("Basic.FirstStartup.RunWizard.NoClicked");
-			OBSMessageBox::information(
-				this, QTStr("Basic.AutoConfig"), msg);
-		}
-	}
+	if (!first_run && !has_last_version && !Active())
+		QMetaObject::invokeMethod(this, "on_autoConfigure_triggered",
+					  Qt::QueuedConnection);
 
 	ToggleMixerLayout(config_get_bool(App()->GlobalConfig(), "BasicWindow",
 					  "VerticalVolControl"));
@@ -1859,6 +1900,8 @@ void OBSBasic::OBSInit()
 #endif
 
 	OnFirstLoad();
+
+	activateWindow();
 
 #ifdef __APPLE__
 	QMetaObject::invokeMethod(this, "DeferredSysTrayLoad",
@@ -2239,6 +2282,23 @@ void OBSBasic::CreateHotkeys()
 		this, this);
 	LoadHotkeyPair(replayBufHotkeys, "OBSBasic.StartReplayBuffer",
 		       "OBSBasic.StopReplayBuffer");
+
+	if (vcamEnabled) {
+		vcamHotkeys = obs_hotkey_pair_register_frontend(
+			"OBSBasic.StartVirtualCam",
+			Str("Basic.Main.StartVirtualCam"),
+			"OBSBasic.StopVirtualCam",
+			Str("Basic.Main.StopVirtualCam"),
+			MAKE_CALLBACK(!basic.outputHandler->VirtualCamActive(),
+				      basic.StartVirtualCam,
+				      "Starting virtual camera"),
+			MAKE_CALLBACK(basic.outputHandler->VirtualCamActive(),
+				      basic.StopVirtualCam,
+				      "Stopping virtual camera"),
+			this, this);
+		LoadHotkeyPair(vcamHotkeys, "OBSBasic.StartVirtualCam",
+			       "OBSBasic.StopVirtualCam");
+	}
 
 	togglePreviewHotkeys = obs_hotkey_pair_register_frontend(
 		"OBSBasic.EnablePreview",
@@ -5029,7 +5089,7 @@ static BPtr<char> ReadLogFile(const char *subdir, const char *log)
 	return file;
 }
 
-void OBSBasic::UploadLog(const char *subdir, const char *file)
+void OBSBasic::UploadLog(const char *subdir, const char *file, const bool crash)
 {
 	BPtr<char> fileString{ReadLogFile(subdir, file)};
 
@@ -5040,6 +5100,7 @@ void OBSBasic::UploadLog(const char *subdir, const char *file)
 		return;
 
 	ui->menuLogFiles->setEnabled(false);
+	ui->menuCrashLogs->setEnabled(false);
 
 	stringstream ss;
 	ss << "OBS " << App()->GetVersionString() << " log file uploaded at "
@@ -5055,8 +5116,13 @@ void OBSBasic::UploadLog(const char *subdir, const char *file)
 				     "text/plain", ss.str().c_str());
 
 	logUploadThread.reset(thread);
-	connect(thread, &RemoteTextThread::Result, this,
-		&OBSBasic::logUploadFinished);
+	if (crash) {
+		connect(thread, &RemoteTextThread::Result, this,
+			&OBSBasic::crashUploadFinished);
+	} else {
+		connect(thread, &RemoteTextThread::Result, this,
+			&OBSBasic::logUploadFinished);
+	}
 	logUploadThread->start();
 }
 
@@ -5072,12 +5138,12 @@ void OBSBasic::on_actionShowLogs_triggered()
 
 void OBSBasic::on_actionUploadCurrentLog_triggered()
 {
-	UploadLog("obs-studio/logs", App()->GetCurrentLog());
+	UploadLog("obs-studio/logs", App()->GetCurrentLog(), false);
 }
 
 void OBSBasic::on_actionUploadLastLog_triggered()
 {
-	UploadLog("obs-studio/logs", App()->GetLastLog());
+	UploadLog("obs-studio/logs", App()->GetLastLog(), false);
 }
 
 void OBSBasic::on_actionViewCurrentLog_triggered()
@@ -5108,7 +5174,7 @@ void OBSBasic::on_actionShowCrashLogs_triggered()
 
 void OBSBasic::on_actionUploadLastCrashLog_triggered()
 {
-	UploadLog("obs-studio/crashes", App()->GetLastCrashLog());
+	UploadLog("obs-studio/crashes", App()->GetLastCrashLog(), true);
 }
 
 void OBSBasic::on_actionCheckForUpdates_triggered()
@@ -5119,6 +5185,7 @@ void OBSBasic::on_actionCheckForUpdates_triggered()
 void OBSBasic::logUploadFinished(const QString &text, const QString &error)
 {
 	ui->menuLogFiles->setEnabled(true);
+	ui->menuCrashLogs->setEnabled(true);
 
 	if (text.isEmpty()) {
 		OBSMessageBox::critical(
@@ -5126,13 +5193,32 @@ void OBSBasic::logUploadFinished(const QString &text, const QString &error)
 			error);
 		return;
 	}
+	openLogDialog(text, false);
+}
+
+void OBSBasic::crashUploadFinished(const QString &text, const QString &error)
+{
+	ui->menuLogFiles->setEnabled(true);
+	ui->menuCrashLogs->setEnabled(true);
+
+	if (text.isEmpty()) {
+		OBSMessageBox::critical(
+			this, QTStr("LogReturnDialog.ErrorUploadingLog"),
+			error);
+		return;
+	}
+	openLogDialog(text, true);
+}
+
+void OBSBasic::openLogDialog(const QString &text, const bool crash)
+{
 
 	obs_data_t *returnData = obs_data_create_from_json(QT_TO_UTF8(text));
 	string resURL = obs_data_get_string(returnData, "url");
 	QString logURL = resURL.c_str();
 	obs_data_release(returnData);
 
-	OBSLogReply logDialog(this, logURL);
+	OBSLogReply logDialog(this, logURL, crash);
 	logDialog.exec();
 }
 
@@ -5213,6 +5299,10 @@ void OBSBasic::OpenSceneFilters()
 	"==== Streaming Start ==============================================="
 #define STREAMING_STOP \
 	"==== Streaming Stop ================================================"
+#define VIRTUAL_CAM_START \
+	"==== Virtual Camera Start =========================================="
+#define VIRTUAL_CAM_STOP \
+	"==== Virtual Camera Stop ==========================================="
 
 void OBSBasic::StartStreaming()
 {
@@ -5933,6 +6023,61 @@ void OBSBasic::ReplayBufferStop(int code)
 	UpdateReplayBuffer(false);
 }
 
+void OBSBasic::StartVirtualCam()
+{
+	if (!outputHandler || !outputHandler->virtualCam)
+		return;
+	if (outputHandler->VirtualCamActive())
+		return;
+	if (disableOutputsRef)
+		return;
+
+	SaveProject();
+
+	if (!outputHandler->StartVirtualCam()) {
+		vcamButton->setChecked(false);
+	}
+}
+
+void OBSBasic::StopVirtualCam()
+{
+	if (!outputHandler || !outputHandler->virtualCam)
+		return;
+
+	SaveProject();
+
+	if (outputHandler->VirtualCamActive())
+		outputHandler->StopVirtualCam();
+
+	OnDeactivate();
+}
+
+void OBSBasic::OnVirtualCamStart()
+{
+	if (!outputHandler || !outputHandler->virtualCam)
+		return;
+
+	vcamButton->setText(QTStr("Basic.Main.StopVirtualCam"));
+	vcamButton->setChecked(true);
+
+	OnActivate();
+
+	blog(LOG_INFO, VIRTUAL_CAM_START);
+}
+
+void OBSBasic::OnVirtualCamStop(int)
+{
+	if (!outputHandler || !outputHandler->virtualCam)
+		return;
+
+	vcamButton->setText(QTStr("Basic.Main.StartVirtualCam"));
+	vcamButton->setChecked(false);
+
+	blog(LOG_INFO, VIRTUAL_CAM_STOP);
+
+	OnDeactivate();
+}
+
 void OBSBasic::on_streamButton_clicked()
 {
 	if (outputHandler->StreamingActive()) {
@@ -6036,6 +6181,20 @@ void OBSBasic::on_recordButton_clicked()
 		}
 
 		StartRecording();
+	}
+}
+
+void OBSBasic::VCamButtonClicked()
+{
+	if (outputHandler->VirtualCamActive()) {
+		StopVirtualCam();
+	} else {
+		if (!UIValidation::NoSourcesConfirmation(this)) {
+			vcamButton->setChecked(false);
+			return;
+		}
+
+		StartVirtualCam();
 	}
 }
 
@@ -6715,6 +6874,15 @@ OBSProjector *OBSBasic::OpenProjector(obs_source_t *source, int monitor,
 	if (monitor > 9 || monitor > QGuiApplication::screens().size() - 1)
 		return nullptr;
 
+	if (monitor > -1) {
+		for (size_t i = 0; i < projectors.size(); i++) {
+			if (projectors[i]->GetMonitor() == monitor) {
+				DeleteProjector(projectors[i]);
+				break;
+			}
+		}
+	}
+
 	OBSProjector *projector =
 		new OBSProjector(nullptr, source, monitor, type);
 
@@ -6845,6 +7013,10 @@ void OBSBasic::OpenSavedProjector(SavedProjectorInfo *info)
 					Qt::LeftToRight, Qt::AlignCenter,
 					size(), rect));
 			}
+
+			if (info->alwaysOnTopOverridden)
+				projector->SetIsAlwaysOnTop(info->alwaysOnTop,
+							    true);
 		}
 	}
 }
@@ -6964,6 +7136,8 @@ void OBSBasic::on_resetUI_triggered()
 	resizeDocks(docks, {cy, cy, cy, cy, cy}, Qt::Vertical);
 	resizeDocks(docks, sizes, Qt::Horizontal);
 #endif
+
+	activateWindow();
 }
 
 void OBSBasic::on_lockUI_toggled(bool lock)
@@ -7833,6 +8007,11 @@ void OBSBasic::UpdatePause(bool activate)
 		pause->setChecked(false);
 		pause->setProperty("themeID",
 				   QVariant(QStringLiteral("pauseIconSmall")));
+
+		QSizePolicy sp;
+		sp.setHeightForWidth(true);
+		pause->setSizePolicy(sp);
+
 		connect(pause.data(), &QAbstractButton::clicked, this,
 			&OBSBasic::PauseToggled);
 		ui->recordingLayout->addWidget(pause.data());
@@ -7856,6 +8035,11 @@ void OBSBasic::UpdateReplayBuffer(bool activate)
 	replay->setChecked(false);
 	replay->setProperty("themeID",
 			    QVariant(QStringLiteral("replayIconSmall")));
+
+	QSizePolicy sp;
+	sp.setHeightForWidth(true);
+	replay->setSizePolicy(sp);
+
 	connect(replay.data(), &QAbstractButton::clicked, this,
 		&OBSBasic::ReplayBufferSave);
 	replayLayout->addWidget(replay.data());
@@ -7964,4 +8148,16 @@ void OBSBasic::on_customContextMenuRequested(const QPoint &pos)
 
 	if (!className || strstr(className, "Dock") != nullptr)
 		ui->viewMenuDocks->exec(mapToGlobal(pos));
+}
+
+void OBSBasic::UpdateProjectorHideCursor()
+{
+	for (size_t i = 0; i < projectors.size(); i++)
+		projectors[i]->SetHideCursor();
+}
+
+void OBSBasic::UpdateProjectorAlwaysOnTop(bool top)
+{
+	for (size_t i = 0; i < projectors.size(); i++)
+		SetAlwaysOnTop(projectors[i], top);
 }
