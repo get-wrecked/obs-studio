@@ -1008,7 +1008,7 @@ static void vk_capture(struct vk_data *data, VkQueue queue,
 	      "devicekey %p, swapchain count %d",
 	      &data->funcs, info->swapchainCount);
 #endif
-	hlog("capture called");
+
 	/* use first swap chain associated with a window */
 	for (; idx < info->swapchainCount; idx++) {
 		struct vk_swap_data *cur_swap =
@@ -1025,11 +1025,9 @@ static void vk_capture(struct vk_data *data, VkQueue queue,
 	}
 
 	if (capture_should_stop()) {
-		hlog("should stop");
 		vk_shtex_free(data);
 	}
 	if (capture_should_init()) {
-		hlog("should init");
 		if (valid_rect(swap) && !vk_shtex_init(data, window, swap)) {
 			vk_shtex_free(data);
 			data->valid = false;
@@ -1037,7 +1035,6 @@ static void vk_capture(struct vk_data *data, VkQueue queue,
 		}
 	}
 	if (capture_ready()) {
-		hlog("capture ready");
 		if (swap != data->cur_swap) {
 			vk_shtex_free(data);
 			return;
